@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 def layerm(n1,n2,thi,pol):
     tht=arcsin(sin(thi)*n1/n2);
     if pol==1: #s-pol
@@ -27,17 +28,18 @@ class multil:
     def __init__(self, name):
         self.name = name
         self.layers = []
-        self.source = source(400,1100,1,1,0)
+        self.source = source(400,1100,1,1,0,600)
         self.refl = []
         self.trans=[]
         self.globm = []
-        self.cwl=6*10**-7
+        self.fpoints = []
+        self.phpoints = []
 
     def add_layer(self, name,thick,n):
         self.layers.append(layer(name,thick,n))
 
-    def set_source(self,lmin,lmax,step,pol,th):
-        self.source=source(lmin,lmax,step,pol,th)
+    def set_source(self,lmin,lmax,step,pol,th,cwl):
+        self.source=source(lmin,lmax,step,pol,th,cwl)
 
     def get_layerinfo(self):
         for i in range(len(self.layers)):
@@ -49,44 +51,36 @@ class multil:
     def calc_tr(self):
         source=self.source
         layers=self.layers
+        layers.reverse()
         print('not ready yet')
         N=len(source.waves)
         R=[0]*N
         T=[0]*N
         n=0
-        for l in source.waves:
-            '''
-            np=self.layers[0].n
-            n1=self.layers[1].n
-            n2=self.layers[2].n
-            d1=self.layers[1].thick
-            d2=self.layers[2].thick
-            gr0=layerm(np,n1,0,1);
-            grn=layerm(n1,np,0,1);
-            gr1=layerm(n1,n2,0,1);
-            pr2=prop(l,0,d2,n2);
-            pr1=prop(l,0,d1,n1);
-            gr2=layerm(n2,n1,0,1);
-            '''
+        for l in source.waves: #pętla po falach
             m=eye(2)
             smax=len(layers); #liczba warstw
             for s in arange(1,smax-1,1):
+		#obliczanie n1 i n2
                 if not len(self.layers[s-1].ndata):
-                    n1=self.layers[s-1].n
+                    n1=layers[s-1].n
                 else:
-                    n1=interp(l,self.layers[s-1].wl,self.layers[s-1].ndata)+1j*interp(l,self.layers[s-1].wl,self.layers[s-1].kdata)
-                if not len(self.layers[s].ndata):
-                    n2=self.layers[s].n
+                    n1=interp(l,layers[s-1].wl,layers[s-1].ndata)+1j*interp(l,layers[s-1].wl,layers[s-1].kdata)
+                if not len(layers[s].ndata):
+                    n2=layers[s].n
                 else:
-                    n2=interp(l,self.layers[s].wl,self.layers[s].ndata)+1j*interp(l,self.layers[s].wl,self.layers[s].kdata)
-                d2=self.layers[s].thick
+                    n2=interp(l,layers[s].wl,layers[s].ndata)+1j*interp(l,layers[s].wl,layers[s].kdata)
+		#obliczanie macierzy
+                d2=layers[s].thick
                 gr1=layerm(n1,n2,0,1);
                 pr1=prop(l,0,d2,n2);
                 m=pr1.dot(gr1).dot(m)
+	    #ostatni etap
             n1=n2
-            n2=self.layers[smax-1].n #ostatnia nie może być nk
+            n2=layers[smax-1].n #ostatnia nie może być nk
             grn=layerm(n1,n2,0,1);
-            m=grn.dot(pr1).dot( m)
+            #pr1=prop(l,0,d2,n2);
+            m=grn.dot( m)
             t=1/m[0,0];
             r=m[1,0];
             R[n]=abs(r*t)**2; #może nie działać dla padania innego niż prostopadłe
@@ -94,41 +88,92 @@ class multil:
             n=n+1
         self.refl=R
         self.trans=T
+        #print(l)
         self.globm=m
 
     def calc_field(self):
-        if len(self.globm):
+        if not len(self.globm):
             self.calc_tr()
         t=1/self.globm[0,0]
         r=self.globm[1,0]*t
-        v=[1 r]
-        m=eye(2)
+        #v=[1/(1+r),r/(1+r)]
+        v=[t,0]
+	#print(dot(self.globm,v))
+
+        layers=self.layers
+#	layers.reverse() calc_tr odwraca, nie ma po co drugi raz
         smax=len(layers); #liczba warstw
-        field=[0]*(smax+1)
+
+        field=zeros([smax,2],dtype="complex")
+        field[0,:]=v
+        fi=[0]*(smax)
+        l=self.source.cwl
+        th=self.source.thi
+
+        m=eye(2)
+	
         for s in arange(1,smax-1,1):
-            if not len(self.layers[s-1].ndata):
-                n1=self.layers[s-1].n
+            if not len(layers[s-1].ndata):
+                n1=layers[s-1].n
             else:
-                n1=interp(l,self.layers[s-1].wl,self.layers[s-1].ndata)+1j*interp(l,self.layers[s-1].wl,self.layers[s-1].kdata)
-            if not len(self.layers[s].ndata):
-                n2=self.layers[s].n
+                n1=interp(l,layers[s-1].wl,layers[s-1].ndata)+1j*interp(l,layers[s-1].wl,layers[s-1].kdata)
+            if not len(layers[s].ndata):
+                n2=layers[s].n
             else:
-                n2=interp(l,self.layers[s].wl,self.layers[s].ndata)+1j*interp(l,self.layers[s].wl,self.layers[s].kdata)
-            d2=self.layers[s].thick
+                n2=interp(l,layers[s].wl,layers[s].ndata)+1j*interp(l,layers[s].wl,layers[s].kdata)
+            d2=layers[s].thick
+            #print(layers[s-1].name)
             gr1=layerm(n1,n2,0,1);
             pr1=prop(l,0,d2,n2);
-            m=pr1.dot(gr1).dot(m) #odtąd trzeba kombinować
+            k=2*pi/l;
+            th=arcsin(sin(th)*n1/n2);
+            fi[s]=k*cos(th)*n2;
+            m=dot(gr1,m) #odtąd trzeba kombinować
             v1=dot(m,v)
-            field[s]=v1[0]+v1[1]
+            m=dot(pr1,m)
+            field[s,:]=v1
+            #field[s]=abs(v1[0])**2+abs(v1[1])**2
+	    #print(v1)
         n1=n2
-        n2=self.layers[smax-1].n #ostatnia nie może być nk
+        n2=layers[smax-1].n #ostatnia nie może być nk
+        th=arcsin(sin(th)*n1/n2);
         grn=layerm(n1,n2,0,1);
-        m=grn.dot(pr1).dot( m)
+	#pr1=prop(l,0,d2,n1);
+        m=grn.dot(m)
         v1=dot(m,v)
-        field[smax]=v1[0]+v1[1]
-        
+	#print(v1)
+        field[smax-1,:]=v1
+        fi[0]=2*pi/l*cos(self.source.thi)*layers[0].n #Starting point for phase
+        fi[smax-1]=2*pi/l*cos(th)*n2
+	#field.reverse() #get 
+        #field[smax-1]=abs(v1[0])**2+abs(v1[1])**2
+        self.fpoints=field
+	#print(array(m)-array(self.globm))
+	#print(abs(v1[1]/v1[0])**2)
+        self.phpoints=fi
+        print(self.fpoints)
+        print(self.phpoints)
+
     def plot_r(self):
         plt.plot(10**9*self.source.waves,self.refl)
+        plt.show()
+
+    def plot_field(self):
+        thv=[0]*(len(self.layers))
+        d=[0]*(len(self.layers))
+        thv[0]=self.layers[0].thick
+
+        x0=0
+        for i in range(len(self.layers)):
+            x=linspace(0,self.layers[i].thick,100)
+            if i==0:
+                fi=exp(1j*self.phpoints[i]*(x-self.layers[i].thick))
+            else:
+                fi=exp(1j*self.phpoints[i]*x)
+            field=self.fpoints[i,0]*fi+self.fpoints[i,1]/fi
+            plt.plot((x+x0)*10**9,abs(field))
+            x0=x0+self.layers[i].thick
+	    
         plt.show()
 
     
@@ -173,44 +218,14 @@ class layer:
         self.get_nk()
 
 class source:
-    def __init__(self, lmin, lmax, step,pol,thi):
+    def __init__(self, lmin, lmax, step,pol,thi,cwl):
         self.lmin = 10**-9*lmin
         self.lmax = 10**-9*lmax
         self.step = 10**-9*step
         self.pol=pol
         self.thi=thi
         self.waves=arange(self.lmin, self.lmax+self.step, self.step)
+        self.cwl=cwl*10**-9
 
-from numpy import cos, arcsin, sin, linspace, exp, dot, eye, zeros, pi, array, arange, interp
+from numpy import cos, arcsin, sin, linspace, exp, dot, eye, zeros, pi, array, arange, interp, real
 import matplotlib.pyplot as plt
-
-#initialize
-d=multil('Figo')
-
-#configuration
-l=6e-7;
-d1=0.25*l/1.5;
-d2=0.25*l/1;
-d.add_layer('const',d2,1)
-d.add_layer('nk',d1,1)
-d.layers[1].set_filename('sodank.txt')
-d.add_layer('const',d2,1)
-d.add_layer('const',d1,1.5)
-d.add_layer('const',d2,1)
-d.add_layer('const',d1,1.5)
-d.add_layer('const',d2,1)
-d.add_layer('const',d1,1.5)
-d.add_layer('const',d2,1)
-d.add_layer('const',d1,1.5)
-d.add_layer('const',d2,1)
-d.add_layer('const',d1,1.5)
-d.add_layer('const',d2,1)
-d.add_layer('const',d1,1.5)
-d.add_layer('const',d2,1)
-
-
-#setup & run simulation
-d.get_layerinfo()
-d.set_source(400,800,0.5,1,0)
-d.calc_tr()
-d.plot_r()
